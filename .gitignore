@@ -1,0 +1,52 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- SQLite Database (Keep folder, ignore active databases & WAL files) ---
+data/*.db
+data/*.db-wal
+data/*.db-shm
+!data/.gitkeep
+
+# --- Node.js & Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.npm
+.eslintcache
+
+# --- OS & IDE Generated Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
