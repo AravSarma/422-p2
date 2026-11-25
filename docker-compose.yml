@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  chess-hub:
+    build: .
+    container_name: emerald-city-chess-hub
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persists the SQLite database file outside container ephemeral storage
+      - chess_data:/app/database
+    environment:
+      - PORT=8000
+    restart: unless-stopped
+
+volumes:
+  chess_data:
+    driver: local
