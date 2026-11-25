@@ -1,0 +1,16 @@
+{
+    "name": "chess-hub-frontend",
+    "version": "1.0.0",
+    "private": true,
+    "dependencies": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+      "typescript": "^5.0.0",
+      "vite": "^5.0.0"
+    },
+    "scripts": {
+      "build": "tsc && vite build"
+    }
+  }
