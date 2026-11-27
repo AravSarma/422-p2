@@ -1,0 +1,19 @@
+# Keep the build context small and host-independent.
+# Host node_modules can contain Windows/macOS-native binaries (esbuild,
+# rollup) that break the Linux build, so they must never be copied in.
+**/node_modules
+**/dist
+**/.vite
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+data
+tests
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore

@@ -1,31 +1,42 @@
-# Build TypeScript React Frontend
+# ---------- Stage 1: build the TypeScript React frontend ----------
+# Node and all build tooling live only in this stage (NFR-02: nothing is
+# installed on the host). Only the compiled static files are carried forward.
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
-# Install dependencies and build static assets
-COPY frontend/package*.json ./
-RUN npm install
+# Install exact versions from the lockfile first so Docker caches this layer
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
 COPY frontend/ ./
 RUN npm run build
 
-# Python Runtime
+
+# ---------- Stage 2: Python standard-library runtime ----------
 FROM python:3.11-slim AS runtime
 WORKDIR /app
 
-# Python environment setup
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    DB_PATH=/app/data/chess_hub.db \
+    STATIC_DIR=/app/backend/static
 
-# Copy backend application code, database module, and standings module
 COPY backend/ ./backend/
 COPY database/ ./database/
 COPY standings/ ./standings/
 
-# Copy compiled frontend build artifacts into the backend's static directory
+# Compiled frontend is served by the Python backend as static files
 COPY --from=frontend-builder /app/frontend/dist ./backend/static
 
-# Expose the standard HTTP server port
+# SQLite lives here; docker-compose bind-mounts ./data so it survives rebuilds
+RUN mkdir -p /app/data
+VOLUME ["/app/data"]
+
 EXPOSE 8000
 
-# Run the Python standard library HTTP server entrypoint
-CMD ["python", "backend/server.py"]
+# Run as a module so `from database import ...` / `from standings import ...`
+# resolve from /app (running `python backend/server.py` would put /app/backend
+# on sys.path instead and break those imports).
+CMD ["python", "-m", "backend.server"]

@@ -1,18 +1,19 @@
-version: '3.8'
-
 services:
   chess-hub:
     build: .
+    image: ec-chesshub:latest
     container_name: emerald-city-chess-hub
     ports:
+      # Bound on all interfaces so phones on the same Wi-Fi can reach the
+      # site via http://<this-computer's-LAN-IP>:8000 (QR flyer risk #1).
       - "8000:8000"
     volumes:
-      # Persists the SQLite database file outside container ephemeral storage
-      - chess_data:/app/database
+      # Persist SQLite outside the container. A bind mount (not a named
+      # volume) keeps chess_hub.db visible in ./data for easy backup
+      # (Maintenance Mode) and never shadows application code.
+      - ./data:/app/data
     environment:
-      - PORT=8000
+      HOST: 0.0.0.0
+      PORT: 8000
+      DB_PATH: /app/data/chess_hub.db
     restart: unless-stopped
-
-volumes:
-  chess_data:
-    driver: local
