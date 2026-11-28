@@ -62,6 +62,14 @@ VALID_SKILL_TIERS = ("Beginner", "Casual", "Tournament")
 # Scope: module-level constant; Lifetime: duration of the Python process.
 VALID_OUTCOMES = ("1-0", "0-1", "1/2-1/2")
 
+# Maps numeric Elo outcomes from standings/elo_service.py to standard chess notation.
+# Scope: module-level constant; Lifetime: duration of the Python process.
+NUMERIC_OUTCOME_MAP: Dict[float, str] = {
+    1.0: "1-0",
+    0.5: "1/2-1/2",
+    0.0: "0-1",
+}
+
 
 class DatabaseManager:
     """
@@ -168,12 +176,25 @@ class DatabaseManager:
     # MEMBER OPERATIONS (FR-04, FR-05, FR-10, FR-11, FR-12)
     # =========================================================================
 
+    @staticmethod
+    def _format_member(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+        """
+        Converts a SQLite member row to a dict exposing both `current_rating`
+        and `rating` so `standings/elo_service.py` (MemberDict) and `backend/`
+        can read the player's Elo rating interchangeably.
+        """
+        if row is None:
+            return None
+        member_dict: Dict[str, Any] = dict(row)
+        member_dict["rating"] = member_dict["current_rating"]
+        return member_dict
+
     def create_member(
         self,
         name: str,
         email: str,
         skill_tier: str,
-        initial_rating: int = 1200,
+        initial_rating: float = 1200,
     ) -> Dict[str, Any]:
         """
         Enrolls a new club member with a baseline Elo rating (FR-04).
@@ -210,7 +231,7 @@ class DatabaseManager:
                     INSERT INTO members (name, email, skill_tier, current_rating)
                     VALUES (?, ?, ?, ?);
                     """,
-                    (clean_name, clean_email, skill_tier, int(initial_rating)),
+                    (clean_name, clean_email, skill_tier, float(initial_rating)),
                 )
                 # Retrieve the auto-generated primary key of the inserted member.
                 new_id: int = int(cursor.lastrowid)
@@ -220,7 +241,8 @@ class DatabaseManager:
                     "SELECT * FROM members WHERE id = ?;",
                     (new_id,),
                 ).fetchone()
-                return dict(row) if row is not None else {}
+                formatted = self._format_member(row)
+                return formatted if formatted is not None else {}
         except sqlite3.IntegrityError as exc:
             # SQLite raises IntegrityError on UNIQUE constraint violations (email).
             if "UNIQUE constraint failed: members.email" in str(exc):
@@ -247,8 +269,8 @@ class DatabaseManager:
                     "SELECT * FROM members WHERE id = ?;",
                     (member_id,),
                 ).fetchone()
-                # Convert sqlite3.Row to a plain Python dict so callers stay decoupled.
-                return dict(row) if row is not None else None
+                # Convert sqlite3.Row to a plain Python dict (with 'rating' alias).
+                return self._format_member(row)
         except sqlite3.Error as exc:
             raise DatabaseError(f"Failed to fetch member {member_id}: {exc}") from exc
 
@@ -269,7 +291,7 @@ class DatabaseManager:
                     "SELECT * FROM members WHERE email = ?;",
                     (clean_email,),
                 ).fetchone()
-                return dict(row) if row is not None else None
+                return self._format_member(row)
         except sqlite3.Error as exc:
             raise DatabaseError(f"Failed to fetch member by email: {exc}") from exc
 
@@ -292,8 +314,8 @@ class DatabaseManager:
                     ORDER BY current_rating DESC, name ASC;
                     """
                 ).fetchall()
-                # Convert each sqlite3.Row into a standard Python dict in a loop.
-                return [dict(row) for row in rows]
+                # Convert each sqlite3.Row into a standard Python dict (with 'rating' alias).
+                return [self._format_member(row) for row in rows if row is not None]
         except sqlite3.Error as exc:
             raise DatabaseError(f"Failed to fetch sorted members: {exc}") from exc
 
@@ -372,9 +394,9 @@ class DatabaseManager:
         self,
         white_id: int,
         black_id: int,
-        outcome: str,
-        new_white_rating: int,
-        new_black_rating: int,
+        outcome: Any,
+        new_white_rating: float,
+        new_black_rating: float,
     ) -> Dict[str, Any]:
         """
         Atomically logs a completed chess match and updates both players' Elo ratings.
@@ -399,10 +421,18 @@ class DatabaseManager:
         if white_id == black_id:
             raise DatabaseError("White and Black players must be different members.")
 
-        # Validate outcome against standard chess result strings.
-        if outcome not in VALID_OUTCOMES:
+        # Normalize numeric Elo outcomes (1.0, 0.5, 0.0) to standard chess strings.
+        if isinstance(outcome, (int, float)) and not isinstance(outcome, bool):
+            if float(outcome) not in NUMERIC_OUTCOME_MAP:
+                raise DatabaseError(
+                    f"Invalid numeric outcome '{outcome}'. Must be 1.0, 0.5, or 0.0."
+                )
+            normalized_outcome: str = NUMERIC_OUTCOME_MAP[float(outcome)]
+        elif isinstance(outcome, str) and outcome in VALID_OUTCOMES:
+            normalized_outcome = outcome
+        else:
             raise DatabaseError(
-                f"Invalid outcome '{outcome}'. Must be one of {VALID_OUTCOMES}."
+                f"Invalid outcome '{outcome}'. Must be one of {VALID_OUTCOMES} or 1.0/0.5/0.0."
             )
 
         try:
@@ -431,20 +461,20 @@ class DatabaseManager:
                     )
                     VALUES (?, ?, ?, ?, ?);
                     """,
-                    (white_id, black_id, white_row["name"], black_row["name"], outcome),
+                    (white_id, black_id, white_row["name"], black_row["name"], normalized_outcome),
                 )
                 match_id: int = int(cursor.lastrowid)
 
                 # Update White player's stored Elo rating in the same transaction.
                 conn.execute(
                     "UPDATE members SET current_rating = ? WHERE id = ?;",
-                    (int(new_white_rating), white_id),
+                    (float(new_white_rating), white_id),
                 )
 
                 # Update Black player's stored Elo rating in the same transaction.
                 conn.execute(
                     "UPDATE members SET current_rating = ? WHERE id = ?;",
-                    (int(new_black_rating), black_id),
+                    (float(new_black_rating), black_id),
                 )
 
                 # Fetch and return the persisted match record.
